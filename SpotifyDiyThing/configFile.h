@@ -1,10 +1,30 @@
+#include <cstring>
+
 #define SPOTIFY_CONFIG_JSON "/spotify_diy_config.json"
 
 #define REFRESH_TOKEN_LABEL "refreshToken"
 #define CLIENT_ID_LABEL "clientId"
 #define CLIENT_SECRET_LABEL "clientSecret"
+#define WIFI_SSID_LABEL "wifiSsid"
+#define WIFI_PASSWORD_LABEL "wifiPassword"
 
-bool fetchConfigFile(char *refreshToken, char *clientId, char *clientSecret) {
+#ifndef WIFI_SSID_FIELD_LENGTH
+#define WIFI_SSID_FIELD_LENGTH 33
+#endif
+
+#ifndef WIFI_PASSWORD_FIELD_LENGTH
+#define WIFI_PASSWORD_FIELD_LENGTH 65
+#endif
+
+bool fetchConfigFile(char *refreshToken, char *clientId, char *clientSecret, char *wifiSsid, char *wifiPassword) {
+  if (wifiSsid != nullptr)
+  {
+    wifiSsid[0] = '\0';
+  }
+  if (wifiPassword != nullptr)
+  {
+    wifiPassword[0] = '\0';
+  }
   if (SPIFFS.exists(SPOTIFY_CONFIG_JSON)) {
     //file exists, reading and loading
     Serial.println("reading config file");
@@ -29,6 +49,28 @@ bool fetchConfigFile(char *refreshToken, char *clientId, char *clientSecret) {
           return false;
         }
 
+        if (wifiSsid != nullptr)
+        {
+          if (json.containsKey(WIFI_SSID_LABEL)) {
+            strncpy(wifiSsid, json[WIFI_SSID_LABEL], WIFI_SSID_FIELD_LENGTH - 1);
+            wifiSsid[WIFI_SSID_FIELD_LENGTH - 1] = '\0';
+          }
+          else {
+            wifiSsid[0] = '\0';
+          }
+        }
+
+        if (wifiPassword != nullptr)
+        {
+          if (json.containsKey(WIFI_PASSWORD_LABEL)) {
+            strncpy(wifiPassword, json[WIFI_PASSWORD_LABEL], WIFI_PASSWORD_FIELD_LENGTH - 1);
+            wifiPassword[WIFI_PASSWORD_FIELD_LENGTH - 1] = '\0';
+          }
+          else {
+            wifiPassword[0] = '\0';
+          }
+        }
+
         return true;
 
       } else {
@@ -45,12 +87,14 @@ bool fetchConfigFile(char *refreshToken, char *clientId, char *clientSecret) {
   }
 }
 
-void saveConfigFile(char *refreshToken, char *clientId, char *clientSecret) {
+void saveConfigFile(char *refreshToken, char *clientId, char *clientSecret, const char *wifiSsid, const char *wifiPassword) {
   Serial.println(F("Saving config"));
   StaticJsonDocument<512> json;
   json[REFRESH_TOKEN_LABEL] = refreshToken;
   json[CLIENT_ID_LABEL] = clientId;
   json[CLIENT_SECRET_LABEL] = clientSecret;
+  json[WIFI_SSID_LABEL] = wifiSsid;
+  json[WIFI_PASSWORD_LABEL] = wifiPassword;
 
   File configFile = SPIFFS.open(SPOTIFY_CONFIG_JSON, "w");
   if (!configFile) {

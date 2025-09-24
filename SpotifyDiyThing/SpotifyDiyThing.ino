@@ -30,6 +30,8 @@
 // This causes issues in certain circumstances e.g. Play an album and let it auto play to related songs
 bool writeContextToNfc = true;
 
+const unsigned long WIFI_CONNECT_TIMEOUT_MS = 20000;
+
 // ----------------------------
 // Library Defines - Need to be defined before library import
 // ----------------------------
@@ -119,6 +121,40 @@ void drawWifiManagerMessage(WiFiManager *myWiFiManager)
   spotifyDisplay->drawWifiManagerMessage(myWiFiManager);
 }
 
+bool connectToStoredWifi()
+{
+  if (wifiSsid[0] == '\0')
+  {
+    Serial.println(F("No WiFi credentials found in config"));
+    return false;
+  }
+
+  Serial.print(F("Connecting to stored WiFi SSID: "));
+  Serial.println(wifiSsid);
+
+  WiFi.mode(WIFI_STA);
+  WiFi.persistent(true);
+  WiFi.begin(wifiSsid, wifiPassword);
+
+  unsigned long startAttemptTime = millis();
+  while (WiFi.status() != WL_CONNECTED && millis() - startAttemptTime < WIFI_CONNECT_TIMEOUT_MS)
+  {
+    delay(500);
+    Serial.print('.');
+  }
+  Serial.println();
+
+  if (WiFi.status() == WL_CONNECTED)
+  {
+    WiFi.setAutoReconnect(true);
+    Serial.println(F("Connected to WiFi using stored credentials"));
+    return true;
+  }
+
+  Serial.println(F("Failed to connect with stored WiFi credentials"));
+  return false;
+}
+
 void setup()
 {
   Serial.begin(115200);
@@ -160,13 +196,34 @@ void setup()
   Serial.println("\r\nInitialisation done.");
 
   refreshToken[0] = '\0';
-  if (!fetchConfigFile(refreshToken, clientId, clientSecret))
+  wifiSsid[0] = '\0';
+  wifiPassword[0] = '\0';
+  bool haveStoredConfig = fetchConfigFile(refreshToken, clientId, clientSecret, wifiSsid, wifiPassword);
+  if (!haveStoredConfig)
   {
     // Failed to fetch config file, need to launch Wifi Manager
     forceConfig = true;
   }
 
-  setupWiFiManager(forceConfig, refreshToken, &saveConfigFile, &drawWifiManagerMessage);
+  bool wifiConnected = false;
+  if (!forceConfig)
+  {
+    wifiConnected = connectToStoredWifi();
+  }
+
+  if (!wifiConnected)
+  {
+    setupWiFiManager(forceConfig, refreshToken, &saveConfigFile, &drawWifiManagerMessage);
+    wifiConnected = WiFi.isConnected();
+  }
+
+  if (!wifiConnected)
+  {
+    Serial.println(F("Failed to connect to WiFi"));
+  }
+
+  WiFi.setAutoReconnect(true);
+  WiFi.persistent(true);
 
   // If we are here we should be connected to the Wifi
   Serial.print("IP address: ");
@@ -198,7 +255,7 @@ void setup()
     {
       Serial.print("Refresh Token: ");
       Serial.println(refreshToken);
-      saveConfigFile(refreshToken, clientId, clientSecret);
+      saveConfigFile(refreshToken, clientId, clientSecret, wifiSsid, wifiPassword);
     }
   }
 

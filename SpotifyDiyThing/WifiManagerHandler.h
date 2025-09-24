@@ -1,4 +1,5 @@
-
+#include <cstdio>
+#include <cstring>
 // Number of seconds after reset during which a
 // subseqent reset will be considered a double reset.
 #define DRD_TIMEOUT 10
@@ -9,6 +10,17 @@
 #define WM_CLIENT_ID_LABEL "clientID"
 #define WM_CLIENT_SECRET_LABEL "clientSecret"
 #define WM_REFRESH_TOKEN_LABEL "refreshToken"
+
+#ifndef WIFI_SSID_FIELD_LENGTH
+#define WIFI_SSID_FIELD_LENGTH 33
+#endif
+
+#ifndef WIFI_PASSWORD_FIELD_LENGTH
+#define WIFI_PASSWORD_FIELD_LENGTH 65
+#endif
+
+char wifiSsid[WIFI_SSID_FIELD_LENGTH];
+char wifiPassword[WIFI_PASSWORD_FIELD_LENGTH];
 
 DoubleResetDetector* drd;
 
@@ -24,7 +36,7 @@ void saveConfigCallback () {
   shouldSaveConfig = true;
 }
 
-void setupWiFiManager(bool forceConfig, char *refreshToken, void (*saveConfig)(char *, char *, char *), void (*configModeCallback)(WiFiManager *myWiFiManager)){
+void setupWiFiManager(bool forceConfig, char *refreshToken, void (*saveConfig)(char *, char *, char *, const char *, const char *), void (*configModeCallback)(WiFiManager *myWiFiManager)){
   WiFiManager wm;
   //set config save notify callback
   wm.setSaveConfigCallback(saveConfigCallback);
@@ -67,10 +79,30 @@ void setupWiFiManager(bool forceConfig, char *refreshToken, void (*saveConfig)(c
     strncpy(clientSecret, clientSecretParam.getValue(), 40);
     strncpy(refreshToken, clientRefreshToken.getValue(), 399);
 
-    saveConfig(refreshToken, clientId, clientSecret);
+    String currentSsid = wm.getWiFiSSID(true);
+    String currentPass = wm.getWiFiPass(true);
+
+    snprintf(wifiSsid, WIFI_SSID_FIELD_LENGTH, "%s", currentSsid.c_str());
+    snprintf(wifiPassword, WIFI_PASSWORD_FIELD_LENGTH, "%s", currentPass.c_str());
+
+    saveConfig(refreshToken, clientId, clientSecret, wifiSsid, wifiPassword);
     drd->stop();
     ESP.restart();
     delay(5000);
+  }
+  else
+  {
+    if (wifiSsid[0] == '\0')
+    {
+      String currentSsid = wm.getWiFiSSID(true);
+      snprintf(wifiSsid, WIFI_SSID_FIELD_LENGTH, "%s", currentSsid.c_str());
+    }
+
+    if (wifiPassword[0] == '\0')
+    {
+      String currentPass = wm.getWiFiPass(true);
+      snprintf(wifiPassword, WIFI_PASSWORD_FIELD_LENGTH, "%s", currentPass.c_str());
+    }
   }
   
 }
