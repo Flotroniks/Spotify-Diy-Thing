@@ -41,6 +41,8 @@ bool writeContextToNfc = true;
 // ----------------------------
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
+#include <SPI.h>
+#include <SD.h>
 
 #include <FS.h>
 #include "SPIFFS.h"
@@ -67,9 +69,19 @@ bool writeContextToNfc = true;
 // header is included as part of the SpotifyArduino libary
 #include <SpotifyArduinoCert.h>
 
-#include <ArduinoJson.h>
-
 WiFiClientSecure client;
+
+bool g_sdCardAvailable = false;
+
+#if defined(ARDUINO_ARCH_ESP32)
+#define SD_CARD_CS_PIN 5
+#define SD_CARD_SCK_PIN 18
+#define SD_CARD_MISO_PIN 19
+#define SD_CARD_MOSI_PIN 23
+SPIClass sdSpi(VSPI);
+#endif
+
+const unsigned long WIFI_CONNECT_TIMEOUT_MS = 20000;
 
 //------- Replace the following! ------
 
@@ -119,6 +131,42 @@ void drawWifiManagerMessage(WiFiManager *myWiFiManager)
   spotifyDisplay->drawWifiManagerMessage(myWiFiManager);
 }
 
+bool connectToConfiguredWifi(const char *ssid, const char *password)
+{
+  if (ssid == nullptr || ssid[0] == '\0')
+  {
+    return false;
+  }
+
+  Serial.print("Attempting to connect to WiFi network ");
+  Serial.println(ssid);
+
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(ssid, password);
+  WiFi.setAutoReconnect(true);
+
+  unsigned long startAttemptTime = millis();
+
+  while (WiFi.status() != WL_CONNECTED && millis() - startAttemptTime < WIFI_CONNECT_TIMEOUT_MS)
+  {
+    delay(500);
+    Serial.print(".");
+  }
+
+  Serial.println();
+
+  if (WiFi.status() == WL_CONNECTED)
+  {
+    Serial.println("Connected to WiFi using stored credentials.");
+    return true;
+  }
+
+  Serial.println("Failed to connect using stored WiFi credentials.");
+  WiFi.disconnect(true);
+  delay(100);
+  return false;
+}
+
 void setup()
 {
   Serial.begin(115200);
@@ -159,18 +207,116 @@ void setup()
   }
   Serial.println("\r\nInitialisation done.");
 
+#if defined(ARDUINO_ARCH_ESP32)
+  sdSpi.begin(SD_CARD_SCK_PIN, SD_CARD_MISO_PIN, SD_CARD_MOSI_PIN, SD_CARD_CS_PIN);
+  if (SD.begin(SD_CARD_CS_PIN, sdSpi))
+  {
+    g_sdCardAvailable = true;
+    Serial.println("SD card initialisation done.");
+  }
+  else
+  {
+    Serial.println("SD card initialisation failed or not present.");
+  }
+#else
+  if (SD.begin())
+  {
+    g_sdCardAvailable = true;
+    Serial.println("SD card initialisation done.");
+  }
+  else
+  {
+    Serial.println("SD card initialisation failed or not present.");
+  }
+#endif
+
   refreshToken[0] = '\0';
-  if (!fetchConfigFile(refreshToken, clientId, clientSecret))
+  clientId[0] = '\0';
+  clientSecret[0] = '\0';
+  wifiSsid[0] = '\0';
+  wifiPassword[0] = '\0';
+
+  bool configLoaded = false;
+  if (g_sdCardAvailable)
+  {
+    bool sdConfigWasJson = false;
+    configLoaded = fetchConfigFromFs(SD, SPOTIFY_CONFIG_FILE, "SD",
+                                     refreshToken, sizeof(refreshToken),
+                                     clientId, sizeof(clientId),
+                                     clientSecret, sizeof(clientSecret),
+                                     wifiSsid, sizeof(wifiSsid),
+                                     wifiPassword, sizeof(wifiPassword),
+                                     &sdConfigWasJson);
+    if (configLoaded && sdConfigWasJson)
+    {
+      Serial.println(F("SD config was JSON formatted; rewriting as YAML."));
+      saveConfigFile(refreshToken, clientId, clientSecret, wifiSsid, wifiPassword);
+    }
+
+    if (!configLoaded)
+    {
+      sdConfigWasJson = false;
+      bool legacyJsonLoaded = fetchConfigFromFs(SD, LEGACY_SPOTIFY_CONFIG_JSON, "SD",
+                                               refreshToken, sizeof(refreshToken),
+                                               clientId, sizeof(clientId),
+                                               clientSecret, sizeof(clientSecret),
+                                               wifiSsid, sizeof(wifiSsid),
+                                               wifiPassword, sizeof(wifiPassword),
+                                               &sdConfigWasJson);
+      if (legacyJsonLoaded)
+      {
+        Serial.println(F("Migrating SD config from JSON to YAML."));
+        saveConfigFile(refreshToken, clientId, clientSecret, wifiSsid, wifiPassword);
+        configLoaded = true;
+      }
+    }
+  }
+
+  if (!configLoaded)
+  {
+    configLoaded = fetchConfigFile(refreshToken, sizeof(refreshToken),
+                                   clientId, sizeof(clientId),
+                                   clientSecret, sizeof(clientSecret),
+                                   wifiSsid, sizeof(wifiSsid),
+                                   wifiPassword, sizeof(wifiPassword));
+  }
+
+  if (!configLoaded)
   {
     // Failed to fetch config file, need to launch Wifi Manager
     forceConfig = true;
   }
 
-  setupWiFiManager(forceConfig, refreshToken, &saveConfigFile, &drawWifiManagerMessage);
+  bool connectedFromConfig = false;
+  if (!forceConfig)
+  {
+    connectedFromConfig = connectToConfiguredWifi(wifiSsid, wifiPassword);
+    if (!connectedFromConfig)
+    {
+      Serial.println("Falling back to WiFi manager for configuration.");
+      forceConfig = true;
+    }
+  }
+
+  if (forceConfig || WiFi.status() != WL_CONNECTED)
+  {
+    setupWiFiManager(forceConfig, refreshToken, &saveConfigFile, &drawWifiManagerMessage);
+  }
+  else
+  {
+    Serial.println(F("WiFi connected using stored credentials, skipping WiFi manager."));
+  }
 
   // If we are here we should be connected to the Wifi
-  Serial.print("IP address: ");
-  Serial.println(WiFi.localIP());
+  if (WiFi.status() == WL_CONNECTED)
+  {
+    Serial.print("IP address: ");
+    Serial.println(WiFi.localIP());
+  }
+  else
+  {
+    Serial.println("WiFi connection not established.");
+  }
 
   spotifySetup(spotifyDisplay, clientId, clientSecret);
 
@@ -198,7 +344,7 @@ void setup()
     {
       Serial.print("Refresh Token: ");
       Serial.println(refreshToken);
-      saveConfigFile(refreshToken, clientId, clientSecret);
+      saveConfigFile(refreshToken, clientId, clientSecret, wifiSsid, wifiPassword);
     }
   }
 

@@ -145,6 +145,20 @@ You should be automatically redirected to the config page.
 
 Note: If you ever need to get back into this config section, click reset button (the button closest to the side) twice.
 
+#### Alternative: Configure via microSD card
+
+If you would prefer to skip the captive portal you can provide the WiFi and Spotify credentials on a microSD card. Create a file called `spotify_diy_config.yaml` in the root of the card (FAT32 is recommended) and populate it with your details:
+
+```yaml
+wifiSsid: "YourWifiName"
+wifiPassword: "YourWifiPassword"
+clientId: "yourSpotifyClientId"
+clientSecret: "yourSpotifyClientSecret"
+refreshToken: "optionalRefreshToken"
+```
+
+Insert the card before powering the device. On boot it will attempt to read this file and connect using the supplied WiFi credentials, then use the Spotify details. If the file is missing or the WiFi connection fails, the captive portal is launched as before. Saving credentials through the portal will also mirror the updated YAML back to the SD card when it is available. Existing `spotify_diy_config.json` files are still read and will be converted to YAML automatically on first boot.
+
 ### Step 4 - Authenticating the device with your Spotify account
 
 The final step is to connect this device to your Spotify account. When the Wifi is configured correctly, it will enter "Refresh Token Mode".
