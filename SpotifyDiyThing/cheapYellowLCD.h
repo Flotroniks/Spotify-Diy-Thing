@@ -145,6 +145,19 @@ public:
       {
         spotify_display->nextTrack();
       }
+      else if (playPauseStatus)
+      {
+        if (isCurrentlyPlaying)
+        {
+          spotify_display->pause();
+          isCurrentlyPlaying = false;
+        }
+        else
+        {
+          spotify_display->play();
+          isCurrentlyPlaying = true;
+        }
+      }
       drawTouchButtons(false, false);
       requestDueTime = 0;                                               // Some button has been pressed and acted on, it surely impacts the status so force a refresh
       touchScreenCoolDownTime = millis() + touchScreenCoolDownInterval; // Cool the touch off
