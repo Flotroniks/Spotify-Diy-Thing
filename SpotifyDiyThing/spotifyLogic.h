@@ -3,6 +3,7 @@ SpotifyDisplay *sp_Display;
 SpotifyArduino spotify(client, NULL, NULL);
 
 bool albumArtChanged = false;
+bool isCurrentlyPlaying = false;
 
 long songStartMillis;
 long songDuration;
@@ -67,6 +68,7 @@ void spotifyRefreshToken(const char *refreshToken)
 
 void handleCurrentlyPlaying(CurrentlyPlaying currentlyPlaying)
 {
+  isCurrentlyPlaying = currentlyPlaying.isPlaying;
   if (currentlyPlaying.trackUri != NULL)
   {
     if (!isSameTrack(currentlyPlaying.trackUri))
@@ -94,6 +96,10 @@ void handleCurrentlyPlaying(CurrentlyPlaying currentlyPlaying)
       // Song doesn't seem to be playing, do not update the progress
       songStartMillis = 0;
     }
+  }
+  else
+  {
+    isCurrentlyPlaying = false;
   }
 }
 
@@ -147,6 +153,7 @@ void updateCurrentlyPlaying(boolean forceUpdate)
     else if (status == 204)
     {
       songStartMillis = 0;
+      isCurrentlyPlaying = false;
       Serial.println("Doesn't seem to be anything playing");
     }
     else
